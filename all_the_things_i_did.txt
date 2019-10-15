@@ -1,0 +1,56 @@
+commit 5edcf390aef133e57d6bb94d138e8bc758c990c8
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Tue Oct 15 17:31:48 2019 +0100
+
+    converted rtf to pdf and added table of vars
+
+commit 5e0d837170c6b4ab095255e1a47dddae9c5d4b3e
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Tue Oct 15 17:30:41 2019 +0100
+
+    tidied up code and added table format output
+
+commit 40b8b29d4b750a490a0b625a8aef1f4f3afcbb7c
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Tue Oct 15 17:28:58 2019 +0100
+
+    changed visio diagram to include table format fastqc
+
+commit ca009238e1e6a62694b886c1d0bbc9b3a4087f0e
+Merge: e5f4a6f 3c348b4
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Mon Oct 14 12:27:37 2019 +0100
+
+    updated visio chart with feedback loops
+
+commit e5f4a6f5a2b2c4b028a7a36e31053165b6ed29f9
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Mon Oct 14 12:23:10 2019 +0100
+
+    updated visio chart with feedback loops
+
+commit 3c348b4f044ee60952c381039e3431689e54779b
+Author: IshIshIsh <55733968+IshIshIsh@users.noreply.github.com>
+Date:   Mon Oct 14 09:44:01 2019 +0100
+
+    Visio Diagram original
+    
+    Added original Visio pipeline diagram of the BPSM assignment1
+
+commit 94e9164e349a6f094edc13c49e05a9e0d395573e
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Sun Oct 13 17:51:39 2019 +0100
+
+    added bowtie2 commands with threading and removed folder creation
+
+commit 1c042c13537b799317164f8def22464eaf343804
+Author: Iseabail Farquhar <ifarquha@bioinfmsc5.bio.ed.ac.uk>
+Date:   Tue Oct 8 22:23:55 2019 +0100
+
+    BPSM assignment 1, FastQC reporting script and output created
+
+commit e8db9c7070b3fda0b4ad864f49f669548ca50f36
+Author: IshIshIsh <55733968+IshIshIsh@users.noreply.github.com>
+Date:   Tue Sep 24 08:10:15 2019 +0100
+
+    Initial commit
