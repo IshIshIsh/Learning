@@ -1,4 +1,4 @@
-data = open('data.csv')
+open('data.csv')
 contents = data.read()
 lines = contents.split('\n')
 lines.pop()
@@ -41,4 +41,20 @@ for i in datadict.keys():
 	print()
 
 
+def pairwise_distance(string1, string2):
+	totalsame = 0 
+	if len(string1) != len(string2):
+		print('Strings are not the same, taking the shortest sequence')
+		if len(string2) < len(string1): 
+			length = len(string2)
+		else: 
+			length = len(string1)
+	else: 
+		length = len(string1)		
+	for i in range(0, length): 
+		if string1[i] == string2[i]:
+			totalsame = totalsame+1
+	totalpercent = totalsame / length * 100 
+	print ('Idenities similar:'+str(totalsame)+' between: '+string1+' and '+string2+
+			' with similarity percent of: '+str(totalpercent)[0:5])
 
