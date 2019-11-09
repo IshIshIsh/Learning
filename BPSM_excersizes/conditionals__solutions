@@ -1,0 +1,60 @@
+open('data.csv')
+contents = data.read()
+lines = contents.split('\n')
+lines.pop()
+
+
+datadict = {}
+for l in lines: 
+	llist = l.split(',')
+	try:
+		datadict[llist[2]] = {'species': llist[0], 'sequence': llist[1], 'expression_level': int(llist[3]), 'gene_length': len(llist[1])}
+	except:
+		print(l)
+		print(llist)
+
+for i in datadict.keys():
+	print('Gene:' + i)
+	A = datadict[i]['sequence'].lower().count('a')
+	T = datadict[i]['sequence'].lower().count('t')
+	G = datadict[i]['sequence'].lower().count('g')
+	C = datadict[i]['sequence'].lower().count('c')
+	ATcontent = (A + T) / datadict[i]['gene_length']
+	datadict[i]['ATcontent'] = ATcontent
+	if datadict[i]['ATcontent'] > 0.65:
+		ATbin = 'high'
+	elif datadict[i]['ATcontent'] < 0.45:
+		ATbin = 'low'
+	else: 
+		ATbin = 'medium'
+	if datadict[i]['expression_level'] > 200:
+		word = 'greater'
+	else: 
+		word = 'lower'
+	print('ATcontent is '+ATbin+' at '+str(ATcontent)[0:4]+
+		' and expression level('+str(datadict[i]['expression_level'])+') is ' + word + ' than 200')
+	if datadict[i]['species'] != 'Drosophila melanogaster' and (i.lower().startswith('k') or i.startswith('h')):
+		print('Gene: '+i+' starts with K or H and species('+(datadict[i]['species'])+') is not melanogaster')
+	else: 
+		print('Gene: '+i+' either doesn\'t start with K or H or species('+(datadict[i]['species'])+') is melanogaster')
+	print()
+	print()
+
+
+def pairwise_distance(string1, string2):
+	totalsame = 0 
+	if len(string1) != len(string2):
+		print('Strings are not the same, taking the shortest sequence')
+		if len(string2) < len(string1): 
+			length = len(string2)
+		else: 
+			length = len(string1)
+	else: 
+		length = len(string1)		
+	for i in range(0, length): 
+		if string1[i] == string2[i]:
+			totalsame = totalsame+1
+	totalpercent = totalsame / length * 100 
+	print ('Idenities similar:'+str(totalsame)+' between: '+string1+' and '+string2+
+			' with similarity percent of: '+str(totalpercent)[0:5])
+
