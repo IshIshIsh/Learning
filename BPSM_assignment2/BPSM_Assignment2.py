@@ -1,4 +1,5 @@
-ssignment 2: Identifying Protein Sequences. 
+"""
+Assignment 2: Identifying Protein Sequences. 
 
 Thoughts & Notes: 
     -Allow obtaining of DNA or just Protein Levels? If we have time at the end, 
@@ -32,6 +33,12 @@ txid8782[Organism:exp] AND G6pc[Gene Name]
  - CHECK: timeout for subprocess
 
 
+EMBOSS Packages which could be useful: 
+- Pepstats
+- pepwindow
+- pepinfo
+
+
 """
 
 ### ---------- Import Statements ---------- ###
@@ -41,6 +48,7 @@ import edirect
 import re
 import subprocess
 from datetime import datetime
+import re
 
 ### ---------- TO RUN AS SCRIPT ---------- ### 
 def __main__():
@@ -52,9 +60,19 @@ def __main__():
 def run_protein_ident(genefamily, taxid, filtered_partial = True, filtered_predicted = True, filepath= None, foldername=None, foldertime = False, iteration=30,
     overwite_max_seqno =False):
     """    
+    Parent Function wrapper for processing Protein Alignments & Statistics 
+    Requires: 
+
+
     1) Before starting any analysis we check the inputs are of the correct type. If they are not we break or return to default.
-    2) Check query is not > hundreds of lines long & replace any spaces with + 
-    3) Create a folder for the output to be saved to 
+    2) Check query is not > hundreds of lines long & replace any spaces with + (will break ncbi request)
+    3) Create a folder for the output
+    4) Retrives Fasta Sequences from NCBI
+    5) Generates a dictionary with protein stats for each fasta (and a pepstats file with extra info)
+    6) Creates an alignment of the fasta sequences using Clustalo
+    7) Creates a consensus sequence from the alignment file using cons package
+    8) 
+
     
     """
     check_edirect_installation()
@@ -71,12 +89,17 @@ def run_protein_ident(genefamily, taxid, filtered_partial = True, filtered_predi
         foldername = check_type(query_filename, str, 'query_filename')
         analysispath = create_folder_path(foldername, filepath, foldertime)
     fastafiles = get_from_ncbi(genefamily, taxid, query_filename, analysispath)
-    fastano = check_read_no_by_split(fastafiles, '>')
+    split_fasta = check_read_no_by_split(fastafiles, '>')
+    fastano = len(split_fasta) + 1
     if fastano > 10000:
         print('WARNING: Sequence number is greater than 10000. For further analysis this may be cut off at 10000 reads unless specified by the user')
+    protein_dict = check_protein_basic_stats(split_fasta)
+    protein_stats = get_protein_stats(fastafiles)
     clustalo_files = align_with_clustalo(fastafiles, iteration)
     consensus = get_consensus_from_alignment(clustalo_files)
-    
+    blastdb = create_blastdb(fastafiles)
+    query = query_choice(analysispath) 
+    blastp_output = query_blastdb(blastdb, query, analysispath)
 
 ### ---------- Utility Functions ---------- ###
 
@@ -106,6 +129,7 @@ def replace_non_alphanumeric_chars(input_string, replacement_char = '_'):
     output = re.sub('[^0-9a-zA-Z]+', replacement_char, input_string)
     return output 
 
+
 def run_nonpython_process(query, timeout = 6000):
     """
     Function wich uses subprocess rather than os due to increased security.
@@ -121,7 +145,7 @@ def run_nonpython_process(query, timeout = 6000):
         #print(error)
         return response 
     except Exception as e: 
-        print('Error running edirect: '+str(e))
+        raise RuntimeError('Error running edirect: '+str(e))
 
 
 def check_edirect_installation():
@@ -141,6 +165,7 @@ def check_edirect_installation():
         run_nonpython_process('sh -c "$(curl -fsSL ftp://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/install-edirect.sh)"')
         print('Edirect has been sucessfully installed. Continuing with analysis')
 
+
 def threads_from_cpu(process):
     """
     Finds the cpu number and asks user prompt for thread number. 
@@ -157,15 +182,51 @@ def threads_from_cpu(process):
         return threads 
 
 
-def check_read_no_by_split(input_file, splitchar): 
-    with open(input_file) as f: 
+def return_file_contents(file):
+    with open(file) as f:
         data = f.read()
+    return data 
+
+
+def check_read_no_by_split(input_file, splitchar): 
+    data = return_file_contents(input_file)
     datasplit = data.split(splitchar)
     if isinstance(datasplit, list) == False: 
         raise ValueError('input file could not be split by specified charecter:'+str(splitchar))
-    return(len(datasplit))
+    datasplit = list(filter(None, datasplit))
+    return(datasplit)
 
 
+### ---------- Python File Analysis ---------- ###
+
+def check_protein_basic_stats(fasta_list):
+    if isinstance(fasta_list, list) == False:
+        raise ValueError('Fasta_list input was not of type list. No dictionary created from fasta files.')
+    short_name_regex = re.compile('^[\S]*')
+    protein_dict = {}
+    for f in fasta_list:
+        name = f[0:f.find('\n')]
+        label = short_name_regex.search(name)
+        seq = f[f.find('\n'):]
+        seqlength = len(seq.replace('\n', ''))
+        protein_dict[label.group(0)] = {'full_name': name, 'sequence': seq, 'length': seqlength}
+    return protein_dict 
+    
+
+#def add_pepstats_info_to_dict(protein_dict, pepstatsfile):
+#    data = return_file_contents(pepstatsfile)
+#    for k in protein_dict:
+#        proteindict[k]['Mol_Weight'] = 
+#        proteindict[k]['Residues'] =
+#        proteindict[k]['Av_residue_weight'] =
+#        proteindict[k]['Charge'] =
+#        proteindict[k]['Isoeelectric_point'] =
+
+            
+
+
+def check_alignment_basic_stats():
+    pass
 
 
 ### ---------- File outputing & File locations ---------- ### 
@@ -223,7 +284,7 @@ def get_from_ncbi(family, taxid, query_filename, filepath, filtered_partial = Tr
     if filtered_predicted == True:
         query_search_term = query_search_term+' NOT predicted[All Fields]'
     print('Query Searched is:'+str(query_search_term))
-    save_location = filepath+'/'+query_filename+'fasta.txt'
+    save_location = filepath+'/'+query_filename+'fasta.fasta'
     edirect_query = "~/edirect/esearch -db protein -query \""+query_search_term+"\" | ~/edirect/efetch -format fasta" 
     edirect_reponse = run_nonpython_process(edirect_query)
     print(edirect_reponse)
@@ -237,18 +298,17 @@ def get_from_ncbi(family, taxid, query_filename, filepath, filtered_partial = Tr
 def align_with_clustalo(fastafile_location, iteration, overwite_max_seqno =False):
     """
     Uses the clustalo package through bash (through subprocess) to generate a multiple sequence alignment file
-    fastafilelocation: The full path of the fasta file location 
+    fastafile_location: The full path of the fasta file location 
     iteration: the number of iterations for the clustalo tree
     overwrite_max_seqno: default value False, if true removes limit on the number of sequences WARNING: DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING!!!
     """
-
     print('Attempting Clustalso Alignment...')
-    clustal_output = fastafile_location.replace('fasta.txt', 'clustal.msf')
+    clustal_output = fastafile_location.replace('fasta.fasta', 'clustal.msf')
     threads = threads_from_cpu('clustalo alignment')
     noreads = check_read_no_by_split(fastafile_location, '>')
     if overwite_max_seqno == False: 
         maxnumseq = 10000
-        if noreads > maxnumseq:
+        if len(noreads) > maxnumseq:
             print('WARNING: Number of reads inputted is greater than the maxnumseq allowed. If absouletly required use overwrite_max_seqno = True and re-analyse your data')
             print('WARNING: Changing overwrite_max_seqno to True is a dangerous option. DO NOT DO THIS UNLESS ABSOLUTELY REQUIRED')
         edirect_reponse = run_nonpython_process("clustalo -i \""+fastafile_location+"\" -t Protein --outfmt=msf --maxnumseq "+str(maxnumseq)+" --full --threads "+str(threads)) 
@@ -259,6 +319,7 @@ def align_with_clustalo(fastafile_location, iteration, overwite_max_seqno =False
          result_file.write(edirect_reponse)
     print('Alignment sucessful, clustal files stored in '+str(clustal_output))
     return clustal_output
+
 
 
 
@@ -273,10 +334,91 @@ def get_consensus_from_alignment(clustal_output):
 
 ### ---------- BLAST ---------- #### 
 
- blastp -query cow.small.faa -db human.1.protein.faa -out cow_vs_human_blast_results.txt
+
+def create_blastdb(fastafile_location):
+    """
+    Uses makeblastdb to make a blast-searchable database from fasta files and save them to an output for use in blastp processing. 
+    """
+    print('Attempting to create a blastdb from fasta files')
+    output = fastafile_location.replace('fasta.fasta', 'blastdb')
+    edirect_reponse = run_nonpython_process("makeblastdb -in \""+fastafile_location+"\" -dbtype prot -out \""+output+"\"")
+    print('blast database creation sucessful. Blastdb file stored in: '+ str(output))
+    return output     
+
+
+def query_choice(filepath):
+    fastas = [fastafile for fastafile in os.listdir(os.path.expanduser(filepath)) if fastafile.endswith(".fasta") == True or fastafile.endswith(".fa") == True ]
+    print('You have the following files with valid file extension for querying against blasdb:')
+    count = 0
+    for f in fastas:
+        print(str(count) +':'+ f)
+        count = count + 1
+    selectedfile = input('Please select the file you wish to use by entering the name or index. If your file is not present, enter your filename instead \\n Please note: Files must be present in the directory:'+str(filepath))
+    try:
+        selectedfileindex = int(selectedfile)
+        if selectedfileindex < count: 
+            selectedfile = fastas[selectedfileindex]
+        else: 
+            raise ValueError('Selected Index:'+selectedfile+'is not valid it must be in the range: 0-'+str(len(fastas-1)))
+    except ValueError: 
+        pass 
+    if selectedfile not in fastas:
+        if os.path.exists(selectedfile):
+            pass 
+        else: 
+            raise ValueError('Selected file:'+str(selectedfile)+' either does not exist or is not a valid option')
+    print('You have selected file: '+str(selectedfile)+'to query against blastdb')
+    reads = check_read_no_by_split(filepath+'/'+selectedfile, '>')
+    if len(reads) > 1:
+        print(len(reads))
+        print('WARNING: The file you have selected contains multiple sequences... creating a dictionary of sequence choices')
+        fasta_dict = check_protein_basic_stats(reads)
+        selected_record = input('Please enter the accession number of the fasta sequence you wish to continue with...\\n'+str(fasta_dict.keys()))
+        if selected_record == '':
+            raise ValueError('Entry was None, invalid response. Terminating program')
+        if selected_record in fasta_dict.keys():
+            selectedfile = selected_record+'_query_record.fasta'
+            with open(filepath+'/'+selectedfile, 'w') as f:
+                f.write(fasta_dict[selected_record]['full_name'] + '\n' + fasta_dict[selected_record]['sequence'])
+        else: 
+            raise ValueError('Selected accession number is not in the list of accession numbers from file: '+selectedfile)
+    print('File selection sucessful:'+str(selectedfile))
+    return filepath+'/'+selectedfile
+
+
+def query_blastdb(blastdb, query_file, filepath):
+    """
+    Uses blastp query a blast-searchable database with selected query_file. 
+    """
+    print('Attempting to run blastp for selected file:'+ str(query_file)+' against blastdb:'+str(blastdb))
+    output = query_file.replace('.fasta','_blastp_output.txt')
+    edirect_reponse = run_nonpython_process("blastp -db \""+blastdb+"\" -query \""+query_file+"\" -outfmt 7 > \""+output+"\"")
+    print(edirect_reponse)
+    print('blastp sucessful. Output file stored in: '+ str(output))
+    return output 
+
 
 ### ---------- Plotting Routines ---------- ### 
 
+
+### ---------- Protein Stats ---------- ### 
+def get_protein_stats(fastafile_location):
+    """
+    Uses EMBOSS pepstats to get protein statistics from the fasta files and save them to an output. 
+    """
+    print('Attempting to get protein statistics from pepstats')
+    output = fastafile_location.replace('fasta.fasta', 'stats.pepstats')
+    edirect_reponse = run_nonpython_process("pepstats -sequence \""+fastafile_location+"\" -outfile \""+output+"\"")
+    print('Protein statistics creation sucessful. Protein Statistics file stored in: '+ str(output))
+    return output 
+
+
 ### ---------- Prosite Data Collection ---------- ### 
+
+
+
+
 run_protein_ident('G6pc', 'txid8782')
 
+
+"/localdisk/home/ifarquha/Protein_Analysis_G6pc_txid8782_2019_11_10/G6pc_txid8782_consensus.fa"
