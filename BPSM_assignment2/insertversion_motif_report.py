@@ -37,3 +37,34 @@ def motif_search_wrapper(analysispath, fasta_dict, selected_bin_labels, bins):
             report_motif_results(analysispath+'/motifs/'+folder)
         print('For more information on motifs per sequence, please see relevant files in folder:'+analysispath+'/motifs/')
     return fasta_dict 
+
+
+    def report_motif_results(bin_directory):
+        """
+    Prints to screen a summary report on the motifs found from PROSITE data in the given directory
+    Does not include reports where no motifs were found
+    eg [protein_id] has [INT] motifs found with prosite name [PROSITE ENTRY NAME] 
+    """
+
+    motif_files = [mfile for mfile in os.listdir(bin_directory) if mfile.endswith(".motif")]
+    motif_dict = {}
+    for mfile in motif_files:
+        with open(os.path.expanduser(bin_directory)+'/'+mfile) as f:
+            data = f.read()
+            motif_no = find_motif_no.search(data).group(1)
+            motifs = find_motif_id.findall(data)
+            if motif_no > 0:
+                motif_dict[mfile] = {'no_motifs': motif_no, 'motifs': motifs}
+    output_header = ['Files Analysed:'+str(len(motif_files))+' motifs found in: '+str(len(motif_files))]
+    output_lines = []
+    print(output_header)
+    for k in motif_dict.keys():
+        output_line = 'File:'+str(k)+': '+str(motif_dict[k]['no_motifs'])+' motifs found with Prosite motif entry name(s): '+str(motif_dict[k]['motifs'])
+        print(output_line)      
+        output_lines.append(output_line)
+    print('For more information, please see relevant .motif file in directory:'+str(bin_directory))      
+    print(' ')
+    return output_header + output_lines
+
+def create_motif_report(motif_directory, bin):
+
