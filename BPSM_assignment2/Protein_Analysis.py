@@ -37,37 +37,70 @@ import json
 ### ---------- Parameter Dict ---------- ### 
 
 parameter_dict = {
+	'gene_family': ['StrList', None],
+	'taxid': ['StrList', None], 
 	'name': [str, ''],
 	'working_directory': [str, str(Path().absolute())],
 	'filtered_partial': [bool, True],
-	'filtered_partial': [bool, True], 
+	'filtered_predicted': [bool, True], 
 	'save_summary': [bool, True],
 	'silent': [bool, True], 
 	'bin_no': [int, 250], 
+	'folder_time': [bool, False],
+	'clustalo_iteration': [int, 30],
+	'keep_fastas': [bool, True]
 	}
 
 ### ---------- Master Function [whole script] ---------- ### 
 
-def master_analysis_requests(gene_family, taxid, defaults_requests, parameter_dict=parameter_dict):
+def master_analysis(gene_family, taxid, defaults_requests = True, parameter_dict=parameter_dict, **kwargs):
 	"""
 	Used as master function when parameters are entered via user prompt
 	"""
+	if defaults_requests == True and len(kwargs.items) > 0:
+		print('WARNING: Default requests is true but key word args were entered, ignoring key word arguments and prompting for var entry')
 	check_edirect_installation()
-	gene_family = replace_non_alphanumeric_chars(gene_family)
+	pathgene_family = replace_non_alphanumeric_chars(gene_family)
 	pathtaxid = replace_non_alphanumeric_chars(taxid)
-	name = gene_family+'_'+pathtaxid+'_'
+	name = pathgene_family+'_'+pathtaxid+'_'
 	parameter_dict['name'] = [str, name]
 	if defaults_requests == True: 
 		for k,v in parameter_dict.items():
-			newvalue = input('Please enter a parameter value for '+k+' of type: '+str(v[0])+' or press enter to use default value:'+str(v[1]))
-			
-	pass
-
-def master_analysis(gene_family, taxid, parameter_dict):
-	"""
-	Used as master function when parameters are passed to function
-	"""
-	pass
+			if k == 'gene_family':
+				gene_family = check_type(gene_family, v[0],'gene_family', v[1])
+				print(type(gene_family))
+				parameter_dict['gene_family'] = [v[0], gene_family]
+			elif k == 'taxid': 
+				taxid = check_type(taxid, v[0],'taxid', v[1])
+				parameter_dict['taxid'] = [v[0], taxid]
+			else:
+				newvalue = user_input_formating(input('Please enter a parameter value for '+k+' of type: '+str(v[0])+' or press enter to use default value:'+str(v[1])))
+				newvalue = check_type(newvalue, v[0], k, v[1])
+				parameter_dict[k] = [v[0], newvalue]
+	else:
+		entry_type, default_val = parameter_dict['gene_family']
+		gene_family = check_type(gene_family, entry_type, 'gene_family', default_val)
+		parameter_dict['gene_family'] = [entry_type, gene_family]
+		entry_type, default_val = parameter_dict['taxid']
+		parameter_dict['taxid'] = [entry_type, check_type(taxid, entry_type, 'taxid', default_val)]
+		for k, v in kwargs.items():
+			if k in parameter_dict.items():
+				newvalue = check_type(v, parameter_dict[k][0], parameter_dict[k][1])
+				parameter_dict[k] = [v, newvalue]
+			else: 
+				raise ValueError("Kwards argument for k:"+str(k)+" was not regonised as a valid keyword argument. Proceess terminated.")
+	print('')		 
+	thread_process_dict = thread_entry(['clustalo alignment', 'blastp query', 'similarity matrix'])
+	working_dir0 = create_folder_path(parameter_dict['name'][1], parameter_dict['working_directory'][1], parameter_dict['folder_time'][1])
+	ncbi_data_path = master_seq_retrieve(working_dir0, gene_family, taxid, parameter_dict['name'][1], parameter_dict['filtered_partial'][1], parameter_dict['filtered_predicted'][1], parameter_dict['silent'][1], parameter_dict['save_summary'][1])
+	alignment_file_path, consensus = master_clustalo(ncbi_data_path, parameter_dict['clustalo_iteration'][1], thread_process_dict, parameter_dict['silent'][1])
+	fasta_dict = master_protein_analysis(ncbi_data_path)
+	blast_data_path, bins = master_blast(working_dir0, parameter_dict['name'][1], ncbi_data_path, fasta_dict, parameter_dict['bin_no'][1], thread_process_dict, parameter_dict['silent'][1])
+	fasta_dict = master_motifs(working_dir0, fasta_dict, bins, parameter_dict['keep_fastas'][1],parameter_dict['save_summary'])
+	fastadb, blastdb = master_graphs(alignment_file_path,ncbi_data_path, thread_process_dict,  blast_data_path, fasta_dict)
+	print('Anaylsis Complete')
+	return fasta_dict, fastadb, blastdb
+	
 
 ### ---------- Master Functions [each task seperately] ---------- ### 
 
@@ -87,20 +120,20 @@ def master_clustalo(fasta_path, iteration, thread_process_dict, silent = True):
 def master_protein_analysis(fasta_path):
 	split_fasta = check_read_no_by_split(fasta_path, '>')
 	fasta_dict = check_protein_basic_stats(split_fasta)
-	protein_stats = get_protein_stats_from_pepstats(split_fasta)
+	protein_stats = get_protein_stats_from_pepstats(fasta_path)
 	fasta_dict = add_pepstats_info_to_dict(fasta_dict, protein_stats)
 	return fasta_dict    
 
 
 def master_blast(working_directory, outputname, fastafile_path, fasta_dict, bin_no, thread_process_dict, silent):
 	blastdb_filepath = create_blastdb(working_directory, outputname, fastafile_path)
-	query_filepath = query_choice(fastafile_path, fasta_dict)
+	query_filepath = query_choice(working_directory, fasta_dict)
 	blast_output = query_blastdb(blastdb_filepath, query_filepath, thread_process_dict,	silent)
 	bins = bin_results(blast_output, bin_no)
 	return blast_output, bins
 
 
-def master_motifs(analysispath, fasta_dict, bins):
+def master_motifs(analysispath, fasta_dict, bins, keep_fastas, save_summary):
 	"""
 	Parent Function for searching fasta sequences from selected bins using Prosite and creating a summary of results: 
 
@@ -117,36 +150,52 @@ def master_motifs(analysispath, fasta_dict, bins):
 	get_prosite_db()
 	if not os.path.isdir(os.path.expanduser(analysispath+'/motifs')):
 		os.mkdir(analysispath+'/motifs')
-		if isinstance(selected_bin_labels, list):
-			for selected_bin_label in selected_bin_labels:
-				if not os.path.isdir(os.path.expanduser(analysispath+'/motifs/bin_'+str(selected_bin_label))):
-					os.mkdir(analysispath+'/motifs/bin_'+str(selected_bin_label))
-				print('Creating individual fasta records for: bin_'+str(selected_bin_label))
-				fasta_list_from_bin = get_selected_seq(selected_bin_label, bins[selected_bin_label], fasta_dict, analysispath+'/motifs/bin_'+str(selected_bin_label))
-				search_motifs_from_list(fasta_list_from_bin, selected_bin_label, analysispath+'/motifs/bin_'+str(selected_bin_label))
-				print('Prosite scan completed for bin:'+str(selected_bin_label))
-				print(' ')
-		else: 
-			selected_bin_label = selected_bin_labels
+	if isinstance(selected_bin_labels, list):
+		for selected_bin_label in selected_bin_labels:
 			if not os.path.isdir(os.path.expanduser(analysispath+'/motifs/bin_'+str(selected_bin_label))):
 				os.mkdir(analysispath+'/motifs/bin_'+str(selected_bin_label))
 			print('Creating individual fasta records for: bin_'+str(selected_bin_label))
 			fasta_list_from_bin = get_selected_seq(selected_bin_label, bins[selected_bin_label], fasta_dict, analysispath+'/motifs/bin_'+str(selected_bin_label))
-			for fasta in fasta_list_from_bin:
-				create_new_fasta_record(fasta, fasta_dict[fasta]['sequence'], analysispath+'/motifs/bin_'+str(selected_bin_label))
-			search_motifs_from_list(fasta_list_from_bin, selected_bin_label, analysispath+'/motifs/bin_'+str(selected_bin_label))
+			search_motifs_from_list(fasta_list_from_bin, selected_bin_label, analysispath+'/motifs/bin_'+str(selected_bin_label), keep_fastas)
 			print('Prosite scan completed for bin:'+str(selected_bin_label))
 			print(' ')
-		for folder in os.listdir(os.path.expanduser(analysispath+'/motifs/')):
-			report_motif_results(analysispath+'/motifs/'+folder)
-		print('For more information on motifs per sequence, please see relevant files in folder:'+analysispath+'/motifs/')
+	else: 
+		selected_bin_label = selected_bin_labels
+		if not os.path.isdir(os.path.expanduser(analysispath+'/motifs/bin_'+str(selected_bin_label))):
+			os.mkdir(analysispath+'/motifs/bin_'+str(selected_bin_label))
+		print('Creating individual fasta records for: bin_'+str(selected_bin_label))
+		print('printing bins:')
+		for k, v in bins.items():
+			print(k)
+			print(v)
+			print()
+		print(bins[selected_bin_label])
+		print('printing fastadict')
+		for k, v in fasta_dict.items():
+			print(k)
+			print(v)
+			print()
+		fasta_list_from_bin = get_selected_seq(selected_bin_label, bins[selected_bin_label], fasta_dict, analysispath+'/motifs/bin_'+str(selected_bin_label))
+		for fasta in fasta_list_from_bin:
+			create_new_fasta_record(fasta, fasta_dict[fasta]['sequence'], analysispath+'/motifs/bin_'+str(selected_bin_label))
+		search_motifs_from_list(fasta_list_from_bin, selected_bin_label, analysispath+'/motifs/bin_'+str(selected_bin_label), keep_fastas)
+		print('Prosite scan completed for bin:'+str(selected_bin_label))
+		print(' ')
+	for folder in os.listdir(os.path.expanduser(analysispath+'/motifs/')):
+		report_motif_results(analysispath+'/motifs/'+folder, save_summary)
+	print('For more information on motifs per sequence, please see relevant files in folder:'+analysispath+'/motifs/')
 	return fasta_dict 
 
 
-def master_graphs(clustalo_files):
+def master_graphs(clustalo_files, fasta_path, thread_process_dict, blast_data_path, fasta_dict):
 	create_hydropathy_plot(clustalo_files)
 	create_plotcon(clustalo_files)
-
+	matrix = similarity_matrix_clustalo(fasta_path, thread_process_dict)
+	if matrix != False:
+		plot_similarity_matrix_heatmap(matrix)
+	blastdb = create_pd_from_blastp(blast_data_path)
+	fastadb = create_pd_from_fasta_dict(fasta_dict)
+	return blastdb, fastadb
 
 ### ---------- Utility Functions ---------- ###
 
@@ -167,11 +216,10 @@ def user_input_formating(input_string):
 		elif input_string in v and k == 'terminate': 
 			print('INTERUPT: User terminated process with input: '+input_string)
 			sys.exit(0)
-		else:
-			return input_string
+	return input_string
 
 
-def check_type(input_string, expected_type, parameter_name, parameter_default = None, user_input = True):
+def check_type(input_string, expected_type, parameter_name, parameter_default = None):
 	"""
 	Internal function: Checks the input against an expected type and either throws an error or returns default value 
 
@@ -187,9 +235,27 @@ def check_type(input_string, expected_type, parameter_name, parameter_default = 
 	"""
 	error = False
 	error_message = ('WARNING: The input: '+str(input_string)+'  for parameter:'+parameter_name+' was not of the expected type: '+
-						str(expected_type))'.
+						str(expected_type))
 	if input_string == 'default':
 		return parameter_default
+	if expected_type == 'StrList':
+		try:
+			input_string=input_string.replace("'",'"')
+			input_object = json.loads(input_string)
+			if isinstance(input_object, list):
+				return input_object
+			elif isinstance(input_object, str):
+				return input_object
+			elif input_object.isnumeric == True:
+				return str(input_object)
+			else: 
+				error = True
+		except: 
+			try:
+				json.loads('"'+input_string+'"')
+				return input_string
+			except:
+				error = True 
 	if expected_type == int:
 		if input_string.isnumeric():
 			return int(input_string)
@@ -200,18 +266,23 @@ def check_type(input_string, expected_type, parameter_name, parameter_default = 
 			input_object = json.loads(input_string)
 			if expected_type == dict and isinstance(input_object, dict):
 				return input_object
-			elif expected_type = list and isinstance(input_object, list):
+			elif expected_type == list and isinstance(input_object, list):
 				return input_object
 			else: 
 				error = True
 		except:
 			error = True
-	elif expected_type == string and isinstance(input_string, str):
+	elif expected_type == bool: 
+		if input_string == True or input_string == False:
+			return input_string
+		else:
+			error = True
+	elif expected_type == str and isinstance(input_string, str):
 		return input_string
 	if error == True and parameter_default == None: 
 		raise ValueError(error_message)
 	elif error == True and parameter_default != None: 
-		print (error_messgae)
+		print (error_message)
 		print('Attempting to return to default value:'+str(parameter_default))
 		return parameter_default
 	else: 
@@ -246,6 +317,9 @@ def replace_non_alphanumeric_chars(input_string, replacement_char = '_', ignore_
 		output = re.sub('[^0-9a-zA-Z]+', replacement_char, input_string)
 	else: 
 		output = re.sub('[^0-9a-zA-Z'+ignore_char+']+', replacement_char, input_string)
+	while '__' in output:
+		output = output.replace('__', '_')
+	output = output.strip('_')
 	return output 
 
 
@@ -254,6 +328,8 @@ def check_thread_format(thread_input, cpu, default_threads):
 	Internal function for processing thread input and printing errors or warnings
 	Vars
 	"""
+	if thread_input == 'default' or thread_input == '' or thread_input == None:
+		return default_threads
 	try: 
 		input_threads = int(thread_input)
 	except: 
@@ -292,13 +368,17 @@ def thread_entry(thread_processes):
 	print('Your cpu count is: '+str(cpu)+' valid thread number range is: 1:'+str(cpu)+'. Default value is: '+str(default_threads))
 	if input_string == False: 
 		for process in thread_processes:
-			input_string = ('Please enter a valid integer to use as thread number to use for process: '+str(process)+' or press enter to use default')
+			input_string = input('Please enter a valid integer to use as thread number to use for process: '+str(process)+' or press enter to use default')
 			input_string = user_input_formating(input_string)
 			threads = check_thread_format(input_string, cpu, default_threads)
 			thread_process_dict[process] = threads
 	else: 
+		input_string = input('Please enter a valid integer to use as thread number to use for all processess or press enter to use default')
+		input_string = user_input_formating(input_string)
+		threads = check_thread_format(input_string, cpu, default_threads)
 		for process in thread_processes: 
 			thread_process_dict[process] = threads
+	print('')
 	return thread_process_dict 
 
 
@@ -388,10 +468,7 @@ def create_folder_path(name, filepath, foldertime = False):
 	Returns:
 		folder: (str) the path to directory used for analysis output
 	"""
-	if name == None:
-		prefix = 'Protein_Analysis_'
-	else: 
-		prefix = name+'_'
+	prefix = 'Protein_Analysis_'
 	if foldertime == False: 
 		datesuffix = datetime.today().strftime('%Y_%m_%d')
 	else: 
@@ -402,6 +479,7 @@ def create_folder_path(name, filepath, foldertime = False):
 		print(folder+' was created and will be used for storing the results of the analysis')
 	else:
 		print(folder+' already exists and will be used for storing the results of the analysis')
+	print('')
 	return folder 
 
 
@@ -422,32 +500,25 @@ hit_count = re.compile('<Count>([0-9]*)<')
 species_fasta = re.compile('>.*\[(.*)\]')
 
 
-def rescursive_ncbi_string(query_string, entry_list, join, entry_type):
-	"""
-	Internal Function: Recursivly adds each entry in the entry list to a query string,
-	adding the join string (if recursion has occured previously) and the entry type and
-	returns updated string. 
-	"""
-	counter = 0
-	for entry in entry_list:
-		if counter > 0:
-			query_string = query_string + join
-		query_string = query_string+str(entry)+entry_type
-	return query_string
-
 
 def ncbi_string_processing(gene_family, taxid, filtered_partial = True, filtered_predicted = True):
 	"""
 	Internal function: Processes inputs to create an NCBI valid query string for data retrival 
 	"""
 	query_string = ''
-	if isinstance(taxid, list): 
-		query_string = rescursive_ncbi_string(query_string, taxid, ' | ', '[Organism:exp]')
+	if isinstance(taxid, list):
+		join_string = '[Organism:exp] OR ' 
+		entry_string = join_string.join(taxid)
+		query_string = query_string + '('+entry_string+'[Organism:exp])'
 	elif isinstance(taxid, str): 
-			query_string = query_string+taxid+'[Organism:exp]'
-	query_string = query_string + ' AND '
+		query_string = query_string+taxid+'[Organism:exp]'
+		query_string = query_string + ' AND '
 	if isinstance(gene_family, list):
-		query_string = rescursive_ncbi_string(query_string, gene_family, ' | ', '[Gene Name]')
+		join_string = '[Gene Name] OR ' 
+		entry_string = join_string.join(gene_family)
+		query_string = query_string + '('+entry_string+'[Gene Name])'
+	elif isinstance(gene_family, str):
+		query_string = query_string+gene_family+'[Gene Name]'
 	if filtered_partial == True and filtered_predicted == True:
 		print('WARNING: filtered_partial is True and filtered_predicted is True so Partial or Predicted sequences will be excluded')
 		query_string = query_string+' NOT partial[All Fields] NOT predicted[All Fields]'
@@ -471,7 +542,7 @@ def get_from_ncbi(gene_family, taxid, file_name, working_directory, filtered_par
 	query_string = ncbi_string_processing(gene_family, taxid, filtered_partial, filtered_predicted)
 	print('Attempting to retrive data from ncbi for query')
 	print('Query searched is '+str(query_string))
-	save_location = working_directory+'/'+file_name+'.fasta'
+	save_location = working_directory+'/'+file_name+'seqs.fasta'
 	edirect_query = "~/edirect/esearch -db protein -query \""+query_string+"\" | ~/edirect/efetch -format fasta" 
 	edirect_response = run_nonpython_process(edirect_query)
 	if silent != True:
@@ -479,7 +550,6 @@ def get_from_ncbi(gene_family, taxid, file_name, working_directory, filtered_par
 	with open(save_location, 'w') as result_file:
 		result_file.write(edirect_response)
 	print('Data Retrival sucessful, fasta files stored in '+str(save_location))
-	print(' ')
 	return save_location   
 
 
@@ -493,17 +563,21 @@ def ncbi_data_summary(working_directory, ncbi_data_path, gene_family, taxid, fil
 		Filter options used 
 	"""
 	fasta_data = return_file_contents(ncbi_data_path)
-	no_sequences = fasta_data.count()
+	no_sequences = fasta_data.count('>')
 	species = species_fasta.findall(fasta_data)  
-	no_species = len(species)
+	no_species = len(set(species))
 	if isinstance(gene_family, list):
 		no_genes = len(gene_family)
 	else:
 		no_genes = 1
-	print('Analysis includes:'+str(no_sequences)+' protein sequences from '+str(no_species)+' including '+str(no_genes)+' genes')
-	input_string = input('Would you like to continue with the analysis?')
-	if user_input_formating(input_string) != True:
-		print('Processing Terminated: Interupt by user')
+	if isinstance(taxid, list):
+		no_taxid = len(taxid)
+	else:
+		no_taxid = 1
+	print('Analysis includes:'+str(no_sequences)+' protein sequences from '+str(no_species)+' species. Results for '+str(no_genes)+' gene(s) and '+str(no_taxid)+' taxid(s)')
+	input_string = user_input_formating(input('Would you like to continue with the analysis?'))
+	if input_string != True and input_string !='default':
+		print('Processing Terminated: Interupt by user with input: '+str(input_string))
 		sys.exit()
 	if no_genes > 10000:
 		input_string = input("WARNING: Number of sequences is greater than 10,000. Would you like to continue? This will make things slow")
@@ -512,26 +586,44 @@ def ncbi_data_summary(working_directory, ncbi_data_path, gene_family, taxid, fil
 			sys.exit()
 	if save_summary == True:
 		with open(working_directory+'/NCBI_retrival_summary.txt', 'w') as f:
-			print('Protein Sequences:'+str(no_sequences), file = f)
-			print('Species Number:'+str(no_species), file = f)
+			print('Number of Protein Sequences:'+str(no_sequences), file = f)
+			print('Number of Unique Sdentified Species :'+str(no_species), file = f)
 			print('Gene Number:'+str(no_genes), file = f) 
+			print('Taxonomic Id(s) searched:'+str(gene_family), file = f)
+			print('Gene(s) searched:'+str(taxid), file = f)
 			print('Search options: Filtering Partial is '+str(filtered_partial)+', Filtering predicted is '+str(filtered_predicted), file = f)
 			print('', file = f)
-			print('Species included:'+str(species), file = f)
-			print('Taxonomic Id(s) searched:'+str(gene_family), file = f)
-			print('Gene(s) searched:'+str(gene_family), file = f)
+			print('Species included:'+str(list(set(species))), file = f)
 		print('NCBI_retrival_summary.txt was saved in working directory')
+	print(' ')
 
 
 def get_species_no_from_taxid(gene_family):
-	edirect_query = "~/edirect/esearch -db protein -query \""+gene_family+"[Subtree]"+"\""
-	edirect_response = run_nonpython_process(edirect_query)
-	counts = hit_count.search(edirect_response)
-	print('INFO: Total number of subtree taxonomy groups in taxid:'+str(gene_family)+' is '+str(counts))
-	edirect_query = "~/edirect/esearch -db protein -query \""+gene_family+"[Subtree] AND species[rank]"+"\""
-	edirect_response = run_nonpython_process(edirect_query)
-	counts = hit_count.search(edirect_response)
-	print('INFO: Total number of subtree species in taxid:'+str(gene_family)+' is '+str(counts))
+	if isinstance(gene_family, list):
+		for gf in gene_family:
+			edirect_query = "~/edirect/esearch -db protein -query \""+gf+"[Subtree]"+"\""
+			edirect_response = run_nonpython_process(edirect_query)
+			counts = hit_count.search(edirect_response)
+			counts = counts.group(1)
+			print('INFO: Total number of subtree taxonomy groups searched in taxid:'+str(gf)+' is '+str(counts))
+			edirect_query = "~/edirect/esearch -db protein -query \""+gf+"[Subtree] AND species[rank]"+"\""
+			edirect_response = run_nonpython_process(edirect_query)
+			counts = hit_count.search(edirect_response)
+			counts = counts.group(1)
+			print('INFO: Total number of subtree species searched in taxid:'+str(gf)+' is '+str(counts))
+	elif isinstance(gene_family, str):
+		edirect_query = "~/edirect/esearch -db protein -query \""+gene_family+"[Subtree]"+"\""
+		edirect_response = run_nonpython_process(edirect_query)
+		counts = hit_count.search(edirect_response)
+		counts = counts.group(1)
+		print('INFO: Total number of subtree taxonomy groups searched in taxid:'+str(gene_family)+' is '+str(counts))
+		edirect_query = "~/edirect/esearch -db protein -query \""+gene_family+"[Subtree] AND species[rank]"+"\""
+		edirect_response = run_nonpython_process(edirect_query)
+		counts = hit_count.search(edirect_response)
+		counts = counts.group(1)
+		print('INFO: Total number of subtree species searched in taxid:'+str(gene_family)+' is '+str(counts))	
+	else:
+		raise ValueError('Internal Error: Type formatting was incorrectly passed to get_species_no_from_taxid')	
 
 
 ### --------- Clustalo Alignment ---------  ####
@@ -544,10 +636,12 @@ def align_with_clustalo(fasta_path, iteration, thread_process_dict, silent = Tru
 	overwrite_max_seqno: default value False, if true removes limit on the number of sequences WARNING: DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING!!!
 	"""
 	print('Attempting Clustalso Alignment...')
-	clustal_output = fasta_path.replace('.fasta', '_clustal.msf')
+	clustal_output = fasta_path.replace('seqs.fasta', 'clustal.msf')
+	if not clustal_output.endswith('clustal.msf'):
+		clustal_output = clustal_output + 'clustal.msf'
 	threads = thread_process_dict['clustalo alignment']
 	fasta_data = return_file_contents(fasta_path)
-	if fasta_data.count() > 10000: 
+	if fasta_data.count('>') > 10000: 
 		input_string = input('WARNING: Number of reads inputted is greater than maxseqno allowed (10,000). Are you certain you want to continue? It will be very slow.')
 		if user_input_formating(input_string) != True:
 			print('Processing Terminated: Interupt by user')
@@ -561,6 +655,18 @@ def align_with_clustalo(fasta_path, iteration, thread_process_dict, silent = Tru
 	print(' ')
 	return clustal_output
 
+def similarity_matrix_clustalo(fasta_path, thread_process_dict):
+	threads = thread_process_dict['similarity matrix']
+	input_string = user_input_formating(input('WARNING: Pairwise distance matrix are very slow with large sequence numbers. Are you sure you want to continue?'))
+	if input_string != True: 
+		return False
+	print('Attempting to create similarity matrix')
+	matrix_output = fasta_path.replace('seqs.fasta', 'matrix.txt')
+	if not matrix_output.endswith('matrix.txt'):
+		matrix_output = matrix_output + 'matrix.txt'
+	run_nonpython_process("clustalo -i \""+fasta_path+"\" --threads "+str(threads)+" -full -o \""+fasta_path+"\" -v --distmat-out= \""+matrix_output+"\"")
+	print('Similarity matrix produced')	
+	return matrix_output
 
 def get_consensus_from_alignment(clustal_output):
 	"""
@@ -568,6 +674,8 @@ def get_consensus_from_alignment(clustal_output):
 	"""
 	print('Attempting to create a consensus sequence from Clustalo output')
 	output = clustal_output.replace('clustal.msf', 'consensus.fa' )
+	if not output.endswith('consensus.fa'):
+		output = output + 'consensus.fa'
 	run_nonpython_process("cons -sequence \""+clustal_output+"\" -outseq \""+output+"\" -sprotein1 true -sid1 \"consensus\" -osformat2 \"fasta\"")
 	print('Consensus creation sucessful. Consensus file stored in: '+ str(output))
 	print('Consensus Sequence from multiple alignment:')
@@ -597,7 +705,7 @@ def query_choice(filepath, fasta_dict):
 	for f in fastas:
 		print(str(count) +':'+ f)
 		count = count + 1
-	selectedfile = input('Please select the file you wish to use by entering the name or index. If your file is not present, enter your filename instead \\n Please note: Files must be present in the directory:'+str(filepath))
+	selectedfile = user_input_formating(input('Please select the file you wish to use by entering the name or index. If your file is not present, enter your filename instead \\n Please note: Files must be present in the directory:'+str(filepath)))
 	try:
 		selectedfileindex = int(selectedfile)
 		if selectedfileindex < count: 
@@ -614,7 +722,7 @@ def query_choice(filepath, fasta_dict):
 	print('You have selected file: '+str(selectedfile)+' to query against blastdb')
 	reads = check_read_no_by_split(filepath+'/'+selectedfile, '>')
 	if len(reads) > 1:
-		print(len(reads))
+		print('Selected file contains more than one sequence:' +str(len(reads)))
 		print('WARNING: The file you have selected contains multiple sequences... creating a dictionary of sequence choices')
 		selected_record = input('Please enter the accession number of the fasta sequence you wish to continue with...\\n'+str(fasta_dict.keys())+"\\n")
 		if selected_record == '':
@@ -638,8 +746,10 @@ def query_blastdb(blastdb_filepath, query_filepath, thread_process_dict,  silent
 	print(return_file_contents(query_filepath))
 	outputfile = query_filepath.replace('.fasta', '.fa').replace('.txt', '.fa')
 	output = outputfile.replace('.fa','_blastp_output.txt')
+	if not output.endswith('_blastp_output.txt'):
+		output = output + '_blastp_output.txt'
 	threads = str(thread_process_dict['blastp query'])
-	edirect_reponse = run_nonpython_process("blastp -db \""+blastdb_filepath+"\" -query \""+query_filepath+"\" -num_threads \""+threads+"\" -outfmt 7 > \""+output+"\"")
+	edirect_reponse = run_nonpython_process("blastp -db \""+blastdb_filepath+"\" -query \""+query_filepath+"\" -num_threads \""+threads+"\" -max_target_seqs 10000 -outfmt 7 > \""+output+"\"")
 	if silent != True:
 		print(edirect_reponse)
 	print('blastp sucessful. Output file stored in: '+ str(output))
@@ -653,15 +763,18 @@ def bin_results(input_file, bin_no, ignore_lines = '#', print_bin_contents = Fal
 	data = return_file_contents(input_file)
 	lines = [line for line in data.split('\n')]
 	validlines = [line for line in lines if line.startswith(ignore_lines) == False]
+	print(len(validlines))
 	validlines = list(filter(None, validlines))
 	## As lists have defined order we can parse this using the first as the top hits
 	totalno = len(validlines)
+	print('Total results to bin:'+str(totalno))
 	no_bins = math.ceil(totalno/bin_no)
+	print('Bins expected:'+str(no_bins))
 	item_no = 0
 	rank_counter = 0 
-	for i in range(0, no_bins-1):
+	for i in range(0, no_bins):
 		result_bin[i] = []
-		for j in range(0,bin_no-1):
+		for j in range(0,bin_no):
 			if item_no < totalno:
 				result_bin[i].append(convert_blastline_to_dict(validlines[item_no], rank_counter))
 				rank_counter = rank_counter + 1
@@ -728,7 +841,7 @@ def bin_selection(valid_bin_list, method):
 				print ('WARNING: Selected bin: '+str(input_bins)+' does not exist in list of valid bins:'+str(valid_bin_list)+'. Returning to default value: Group 0')
 				default_bin = True
 			else:
-				selected_bin = input_bins
+				selected_bin = int(input_bins)
 		else: 
 			print('WARNING: Non integer bin:'+str(input_bins)+' selected. Returning to default value of: Bin 0')
 			default_bin = True    
@@ -737,13 +850,6 @@ def bin_selection(valid_bin_list, method):
 	return selected_bin
 
 
-def create_pd_from_blastp(inputfile, ignored = '#'):
-	"""
-	TODO NOT USED.
-	"""
-	headers=['query_acc.', 'subject_acc.', '%_identity', 'alignment_length', 'mismatches', 'gap_opens', 'query_start', 'query_end', 'subject_start', 'subject_end', 'evalue', 'bit_score']
-	blastpd = pd.read_csv(inputfile, comment = ignored, sep ='\t', names = headers)
-	return blastpd
 
 ### ---------- Protein Stats ---------- ### 
 short_name_regex = re.compile('^[\S]*')
@@ -760,7 +866,10 @@ def get_protein_stats_from_pepstats(fastafile_location):
 	Uses EMBOSS pepstats to get protein statistics from the fasta files and save them to an output. 
 	"""
 	print('Attempting to get protein statistics from pepstats')
-	output = fastafile_location.replace('.fasta', 'stats.pepstats')
+	print(fastafile_location)
+	output = fastafile_location.replace('seqs.fasta', 'stats.pepstats')
+	if not output.endswith('stats.pepstats'):
+		output = output + 'stats.pepstats'
 	run_nonpython_process("pepstats -sequence \""+fastafile_location+"\" -outfile \""+output+"\"")
 	print('Protein statistics creation sucessful. Protein Statistics file stored in: '+ str(output))
 	print(' ')
@@ -892,7 +1001,7 @@ def search_motifs_from_list(fasta_list, group_name, directory, keep_fastas = Fal
 	Wraps the motif finder using prosite for each fasta file in a list. 
 	Useful for searching bins but kept as a wrapper in case user wishes to search specific single sequence
 	"""
-	print('Attempting to search for motifs using prosite in sequences:'+str(group_name))
+	print('Attempting to search for motifs using prosite in sequences: bin_'+str(group_name))
 	for fasta_file_name in fasta_list:
 		search_for_motifs(fasta_file_name, directory)
 	if keep_fastas == False: 
@@ -913,7 +1022,7 @@ find_motif_no = re.compile('# HitCount:(.*)\n')
 find_motif_id = re.compile('Motif = (.*)\n')
 
 
-def report_motif_results(directory):
+def report_motif_results(directory, save_summary):
 	"""
 	Prints to screen a summary report on the motifs found from PROSITE data in the given directory
 	Does not include reports where no motifs were found
@@ -927,11 +1036,16 @@ def report_motif_results(directory):
 			data = f.read()
 			motif_no = find_motif_no.search(data).group(1)
 			motifs = find_motif_id.findall(data)
-			if motif_no > 0:
+			if int(motif_no) > 0:
 				motif_dict[mfile] = {'no_motifs': motif_no, 'motifs': motifs}
 	print('Files Analysed:'+str(len(motif_files))+' motifs found in: '+str(len(motif_files)))
 	for k in motif_dict.keys():
 		print('File:'+str(k)+': '+str(motif_dict[k]['no_motifs'])+' motifs found with Prosite motif entry name(s): '+str(motif_dict[k]['motifs']))      
+	if save_summary == True: 
+		with open(directory+'/motif_summary.txt', 'w') as f:
+			for k in motif_dict.keys():
+				print('File:'+str(k)+': '+str(motif_dict[k]['no_motifs'])+' motifs found with Prosite motif entry name(s): '+str(motif_dict[k]['motifs']), file = f)
+		print('motif_summary.txt was saved in motif bin directory')
 	print('For more information, please see relevant .motif file in directory:'+str(directory))      
 	print(' ')
 
@@ -941,6 +1055,8 @@ def report_motif_results(directory):
 def create_hydropathy_plot(alignment_file):
 	print('Attempting to create Kyte-Doolittle Hydropathy plot for alignment')
 	output = alignment_file.replace('clustal.msf', 'hydropathy_alignment')
+	if not output.endswith('hydropathy_alignment'):
+		output = output + 'hydropathy_alignment'
 	run_nonpython_process("pepwindowall \""+alignment_file+"\" -graph svg -gxtitle \'Residue\' -gtitle2 \"Kyte-Doolittle Hydropathy for Alignment\" -goutfile \""+output+"\"")
 	print('Protein statistics creation sucessful. Protein Statistics file stored in: '+ str(output))
 	print(' ')
@@ -955,6 +1071,42 @@ def create_plotcon(alignment_file):
 	run_nonpython_process("plotcon -sequences \""+alignment_file+"\" -graph svg -goutfile \""+output+"\"")
 	print('Similarity Plot created sucessfully. Plotcon output file stored as: '+ str(output)+'.svg')
 	print(' ')
+
+
+def plot_similarity_matrix_heatmap(matrix_filepath):
+	data = return_file_contents(matrix_filepath)
+	labels = []
+	matrix = []
+	for record_index, record_data in enumerate(filter(None, data.split('\n'))):
+		if record_index != 0 and record_data:
+			matrix.append([])
+			for column_index, column_data in enumerate(filter(None, record_data.split(' '))):
+				if column_index == 0:
+					labels.append(column_data)
+				else: 
+					matrix[record_index-1].append(float(column_data))
+	df = pd.DataFrame(matrix, columns = labels, index = labels)
+	ax = sns.heatmap(df)
+	plt.title('Heatmap of Similarity Matrix for sequence_id')
+	plt.tight_layout()
+	plt.savefig('similarity_matrix_heatmap.png')
+	plt.show()
+
+
+def create_pd_from_blastp(inputfile, ignored = '#'):
+	"""
+	"""
+	headers=['query_acc.', 'subject_acc.', '%_identity', 'alignment_length', 'mismatches', 'gap_opens', 'query_start', 'query_end', 'subject_start', 'subject_end', 'evalue', 'bit_score']
+	blastpd = pd.read_csv(inputfile, comment = ignored, sep ='\t', names = headers)
+	return blastpd
+
+
+
+def create_pd_from_fasta_dict(fasta_dict):
+	"""
+	"""
+	df = pd.DataFrame.from_dict(fasta_dict, orient = 'index')
+	return df
 
 
 ### ---------- TO RUN AS SCRIPT ---------- ### 
@@ -1002,6 +1154,44 @@ esearch -db gene -query "Liver cancer AND Homo sapiens" | \
 efetch -format docsum | \
 xtract -pattern DocumentSummary -element Name OtherAliases OtherDesignations
 glucose-6-phosphatase AND Aves 
+
+
+
+def create_catagorical_line_plot(x, y, title, fasta_df, motif_bin_filepath):
+	bin_paths = [f.path for f in os.scandir(folder) if f.is_dir()]
+	bins_ids = {}
+	count = 0
+	for folder in bin_paths: 
+		bin_ids[count] = []
+		for file_name in os.listdir(folder):
+			if file_name.replace('.fasta', '').replace('.motif') not in bin_ids[count]:
+				bin_ids[count].append([])
+	if len(bin_paths) == 1:
+plt.plot(subdf.index, subdf['Mol_Weight'], 'r')
+plt.plot(subdf.index, subdf['Charge'], 'b')
+plt.plot(subdf.index, subdf['length'], 'p')		
+	fig, ax = plt.subplots(1,len(bin_paths))
+	ax
+	
+def subdf_for_bin(id_list, df):
+	df = df[df.index.isin(id_list)]
+	return df
+['CAP10123.1', 'CAP10110.1', 'BAE72078.1', 'BAE46847.1']
+
+
+"""
+
+"""
+Test cases: 
+glucose-6-phosphatase proteins from Aves (G6pc txid8782)/(G6pc,COX1 txid8782)
+
+
+ABC transporters in mammals
+
+kinases in rodents
+
+adenyl cyclases in vertebrates
+
 """
 
 
