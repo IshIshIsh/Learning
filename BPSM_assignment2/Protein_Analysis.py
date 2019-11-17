@@ -48,8 +48,7 @@ parameter_dict = {
 	'bin_no': [int, 250], 
 	'folder_time': [bool, False],
 	'clustalo_iteration': [int, 30],
-	'keep_fastas': [bool, False], 
-	'folder_time': [bool, False]
+	'keep_fastas': [bool, True]
 	}
 
 ### ---------- Master Function [whole script] ---------- ### 
