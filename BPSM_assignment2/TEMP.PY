@@ -59,13 +59,6 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 import pandas as pd
 
-### ---------- TO RUN AS SCRIPT ---------- ### 
-
-def __main__(genefamily, taxid):
-    run_protein_ident(genefamily, taxid, filtered_partial = True, filtered_predicted = True, filepath= None, foldername=None, foldertime = False, iteration=30,
-    overwite_max_seqno =False)
-
-
 ### ---------- Master Functions ---------- ###
 
 def run_protein_ident(genefamily, taxid, filtered_partial = True, filtered_predicted = True, filepath= None, foldername=None, foldertime = False, iteration=30,
@@ -844,7 +837,12 @@ def create_hydropathy_plot(alignment_file):
     print(' ')
 
     
-
+#def create_pepinfo_plots(fasta_file, fasta_file_label):
+#    print('Attempting to create pep-info plot for selected fasta file'+str(fasta_file_label))
+#    output = fasta_file.replace('.fasta', 'pepinfo')
+#    ## Makes graph in file called pepinfo.ps 
+#    ## pepinfo "/localdisk/home/ifarquha/testing_patterns/XP_030822190.1" -graph cps -gtitle XP_030822190.1 #
+#
   
 
 """
