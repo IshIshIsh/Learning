@@ -715,7 +715,7 @@ def ncbi_data_summary(working_directory, ncbi_data_path, gene_family, taxid, fil
 
 
 def get_species_no_from_taxid(taxid):
-    """
+	"""
 	Internal function to provide more information on number of sequences searched in specified taxid
 	"""
 	if isinstance(taxid, list):
@@ -780,7 +780,7 @@ def align_with_clustalo(fasta_path, iteration, thread_process_dict, silent = Tru
 
 
 def similarity_matrix_clustalo(fasta_path, thread_process_dict):
-    """
+	"""
 	Creates a pairwise distance matrix using clustalo aligment for use in heatmap plotting
 	Requires user input to continue as large number of sequences will take a long time
 	Vars: 
@@ -844,7 +844,7 @@ def create_blastdb(working_directory, outputname, fastafile_path):
 
 
 def query_choice(filepath, fasta_dict):
-    """
+	"""
 	Internal function to allow selection of valid sequence files to use as a query in the blastp analysis
 	Gives list of valid file (based on extension) and user prompt to select. 
 	If user selects multi-fasta file, allows user to select a single fasta from list of ids contained in multi-sequence fasta
@@ -918,7 +918,7 @@ def query_blastdb(blastdb_filepath, query_filepath, thread_process_dict,  silent
 
 
 def bin_results(input_file, bin_no, ignore_lines = '#', print_bin_contents = False):
-    """
+	"""
 	Function to split results into specified bins: 
 	Vars: 
 		input_file:(str, path) path to the blastp output file
@@ -966,7 +966,7 @@ def bin_results(input_file, bin_no, ignore_lines = '#', print_bin_contents = Fal
 
 
 def convert_blastline_to_dict(line, rank_counter):
-    """
+	"""
 	Internal Function Creates a dictionary of blast results including rank and blast results
 	"""
 	entry = line.split('\t')
@@ -992,7 +992,7 @@ def convert_blastline_to_dict(line, rank_counter):
 
 
 def bin_selection(valid_bin_list, method):
-    """
+	"""
 	Internal function to allow one or more bins to be selected for further analysis (motif search & plotting)
 	will default to only using the top bin (0) if non valid user prompt entry.
 	"""
@@ -1059,7 +1059,7 @@ def get_protein_stats_from_pepstats(fastafile_location):
 
 
 def check_protein_basic_stats(fasta_list):
-    """
+	"""
 	Internal function to create the fasta_dict and populate it with basic info 
 	from the fasta file. 
 	"""
@@ -1076,7 +1076,7 @@ def check_protein_basic_stats(fasta_list):
 
 
 def add_pepstats_info_to_dict(fasta_dict, pepstatsfile):
-    """
+	"""
 	Internal function to populate fasta_dict with the basic results of the pepstats search
 		-TODO can be extended to process more complex results from pepstats to plot protein 
 			of intrest in more detail
