@@ -78,7 +78,7 @@ def master_analysis(gene_family, taxid, defaults_requests = True, parameter_dict
 		fastadb: [pandas dataframe] a dataframe of fasta_dict for plotting vars
 		blastdb: [pandas dataframe] a dataframe of blast results for plotting vars
 	"""
-	if defaults_requests == True and len(kwargs.items) > 0:
+	if defaults_requests == True and len(kwargs.items()) > 0:
 		print('WARNING: Default requests is true but key word args were entered, ignoring key word arguments and prompting for var entry')
 	check_edirect_installation()
 	pathgene_family = replace_non_alphanumeric_chars(gene_family)
