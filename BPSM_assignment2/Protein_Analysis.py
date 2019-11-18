@@ -35,8 +35,13 @@ import json
 
 
 ### ---------- Parameter Dict ---------- ### 
-
-parameter_dict = {
+"""
+Method of storing parameter_name, expected_type and default values to be parsed for user inputs.
+Additional vars can be added in and treated the same way easily
+Global default. New one can be passed in. 
+	- TODO checking for k, v pairs in passed in dict 
+"""
+global_parameter_dict = {
 	'gene_family': ['StrList', None],
 	'taxid': ['StrList', None], 
 	'name': [str, ''],
@@ -53,9 +58,25 @@ parameter_dict = {
 
 ### ---------- Master Function [whole script] ---------- ### 
 
-def master_analysis(gene_family, taxid, defaults_requests = True, parameter_dict=parameter_dict, **kwargs):
+def master_analysis(gene_family, taxid, defaults_requests = True, parameter_dict=global_parameter_dict, **kwargs):
 	"""
-	Used as master function when parameters are entered via user prompt
+	Used as master function for automated analysis. 
+	Three use modes: 
+		- defautlt_requests = True: User prompt for each parameter value, with defaults and type checking
+		- default_requests = False: automatically uses default values without prompting
+		- **kwargs = dict to pass in values to overwrite defaults
+	Vars: 
+		gene_family (str) a string of either a string or list (with appropriate escaped " or pairs of "') of gene names to search 
+		taxid (str) a string of either a string or list (with appropriate escaped " or pairs of "') of taxonomic IDs to search in format txid0000
+		defaults_requests [bool] [true] whether to prompt user for parameter values or use defaults
+		parameter_dict (dict) [global_parameter_dict] dict containinng parameter_name: [parameter expected value, parameter default]
+		**kwargs (dict) containing k,v arguments for overwriting global_parameter_dict
+	Produces: 
+
+	Returns: 
+		fasta_dict [dict], a dict containing basic protein info, sequence_id and sequence
+		fastadb: [pandas dataframe] a dataframe of fasta_dict for plotting vars
+		blastdb: [pandas dataframe] a dataframe of blast results for plotting vars
 	"""
 	if defaults_requests == True and len(kwargs.items) > 0:
 		print('WARNING: Default requests is true but key word args were entered, ignoring key word arguments and prompting for var entry')
@@ -104,20 +125,53 @@ def master_analysis(gene_family, taxid, defaults_requests = True, parameter_dict
 
 ### ---------- Master Functions [each task seperately] ---------- ### 
 
-def master_seq_retrieve(working_directory, gene_family, taxid, ncbi_file_name, filtered_partial, filtered_predicted, silent, save_summary):
+def master_seq_retrieve(working_directory, gene_family, taxid, ncbi_file_name, filtered_partial= True, filtered_predicted= True, silent= True, save_summary = True):
+	"""
+	Parent Function for sequence retrival from NCBI
+	Vars:
+		working_directory: (str, path) path to directory to store results in
+		gene_family (str) a string of either a string or list (with appropriate escaped " or pairs of "') of gene names to search 
+		taxid (str) a string of either a string or list (with appropriate escaped " or pairs of "') of taxonomic IDs to search in format txid0000
+		ncbi_file_name: (str) prefix name for seqs.fasta output
+		filtered_partial (bool) [True] whether to add or exclude partial sequences from the fasta results
+		filtered_predicted (bool) [True] whether to add or exclude predicted sequences from the fasta results
+		silent: (bool) [True] whether to print outputs to screen (note: summary reports should still be printed regardless)
+		save_summary (bool) [True] whether to save print summaries to text files.
+	Returns: 
+		ncbi_data_path: (str, path) path to the multi-sequence fasta_file
+	"""
 	ncbi_data_path = get_from_ncbi(gene_family, taxid, ncbi_file_name, working_directory, filtered_partial, filtered_predicted, silent)
-	get_species_no_from_taxid(gene_family)
+	get_species_no_from_taxid(taxid)
 	ncbi_data_summary(working_directory, ncbi_data_path, gene_family, taxid, filtered_partial, filtered_predicted, save_summary)
 	return ncbi_data_path
 
 
 def master_clustalo(fasta_path, iteration, thread_process_dict, silent = True):
+	"""
+	Parent function for clustalo alignment 
+	Vars: 
+		fasta_path: (str, path) path to the multi-sequence fasta file
+		iteration: (int) [30] number of trees-iteratations for alignment method
+		thread_process_dict (dict) contains the threads used for each method
+		silent: (bool) [True] whether to print outputs to screen (note: summary reports should still be printed regardless)
+	Returns: 
+		alignment (str, path) path to the clustal alignment output file
+		consensus (str, path) path to the consensus fasta file
+	"""
 	alignment = align_with_clustalo(fasta_path, iteration, thread_process_dict, silent)   
 	consensus = get_consensus_from_alignment(alignment)
 	return alignment, consensus 
 
 
 def master_protein_analysis(fasta_path):
+	"""
+	Parent function to create a fasta_dict and populate it with sequence_ids, sequences and basic protein statistics
+	Also creates a file containing in depth statitics about each sequence using pepstats. 
+	Vars: 
+		fasta_path: (str, path) path to the multi-sequence fasta file
+	Returns: 
+		fasta_dict: (dict) containg key (sequence_id), value (long name, sequence, basic stats) pairs on fasta interpretation results
+	"""
 	split_fasta = check_read_no_by_split(fasta_path, '>')
 	fasta_dict = check_protein_basic_stats(split_fasta)
 	protein_stats = get_protein_stats_from_pepstats(fasta_path)
@@ -126,6 +180,21 @@ def master_protein_analysis(fasta_path):
 
 
 def master_blast(working_directory, outputname, fastafile_path, fasta_dict, bin_no, thread_process_dict, silent):
+	"""
+	Parent function for blastp analysis. Option to blast any sequence (includig from multi-sequence fasta) or use consensus
+	to give relatedness ranking. Creates bins a dictionary of bin, rank & sequence_ids
+	Vars: 
+		working_directory: (str, path) path to directory to store results in
+		outputname: (str) prefix name for blastdb database output
+		fastafile_path: (str, path) path to the multi-sequence fasta file
+		fasta_dict: (dict) containg key (sequence_id), value (long name, sequence, basic stats) pairs on fasta interpretation results
+		bin_no: (int) [250] the number of sequences to put in each bin 
+		thread_process_dict (dict) contains the threads used for each method
+		silent: (bool) [True] whether to print outputs to screen (note: summary reports should still be printed regardless)
+	Returns:
+		blast_output:(str, path) path to the blastp output file
+		bins: (dict) of bin_number: sequence_id, rank
+	"""
 	blastdb_filepath = create_blastdb(working_directory, outputname, fastafile_path)
 	query_filepath = query_choice(working_directory, fasta_dict)
 	blast_output = query_blastdb(blastdb_filepath, query_filepath, thread_process_dict,	silent)
@@ -188,6 +257,19 @@ def master_motifs(analysispath, fasta_dict, bins, keep_fastas, save_summary):
 
 
 def master_graphs(clustalo_files, fasta_path, thread_process_dict, blast_data_path, fasta_dict):
+	"""
+	Parent function to create some basic graphs. Return pandas database format output for blast & fasta 
+	informtion to pass into further plotting routinues (to be added)
+	Vars: 
+		clustalo_files (str, path) path to the clustal alignment output file
+		fasta_path: (str, path) path to the multi-sequence fasta file	
+		thread_process_dict (dict) contains the threads used for each method
+		blast_data_path:(str, path) path to the blastp output file
+		fasta_dict: (dict) containg key (sequence_id), value (long name, sequence, basic stats) pairs on fasta interpretation results
+	Output: 
+		fastadb: [pandas dataframe] a dataframe of fasta_dict for plotting vars
+		blastdb: [pandas dataframe] a dataframe of blast results for plotting vars
+	"""
 	create_hydropathy_plot(clustalo_files)
 	create_plotcon(clustalo_files)
 	matrix = similarity_matrix_clustalo(fasta_path, thread_process_dict)
@@ -222,6 +304,7 @@ def user_input_formating(input_string):
 def check_type(input_string, expected_type, parameter_name, parameter_default = None):
 	"""
 	Internal function: Checks the input against an expected type and either throws an error or returns default value 
+	More complicated due to parsing input() information as this is always a string
 
 	Vars: 
 		input_string: (ANY) value of the parameter to check the type of
@@ -326,7 +409,12 @@ def replace_non_alphanumeric_chars(input_string, replacement_char = '_', ignore_
 def check_thread_format(thread_input, cpu, default_threads):
 	"""
 	Internal function for processing thread input and printing errors or warnings
-	Vars
+	Vars:
+		thread_input: [str None ] the (processed) input string for parsing into int or default
+		cpu: [int] the available cpu threads
+		default_threads [int] the default value to use for threading
+	Returns: 
+		default_threads: [int] either correct input integer or default value
 	"""
 	if thread_input == 'default' or thread_input == '' or thread_input == None:
 		return default_threads
@@ -344,6 +432,7 @@ def check_thread_format(thread_input, cpu, default_threads):
 def auto_thread():
 	"""
 	Internal function which calculates and returns the available cpu count and default thread number
+	as ints 
 	"""    
 	cpu = os.cpu_count()
 	default_threads = int(cpu/3)
@@ -353,7 +442,8 @@ def auto_thread():
 def thread_entry(thread_processes):
 	"""
 	Internal function. Calculates the max cpu threads available and default values (an integer of 1/3rd available cpu)
-	Lists processes which use threading and asks user to either set the thread number for all or individually
+	Lists processes which use threading and asks user to either set the thread number for all or individually and stores 
+	output in a dictionary of thread_processes
 	Vars: 
 		thread_processes: (list) containing all processes which can use a threading input
 	Returns:
@@ -487,6 +577,7 @@ def convert_filetypes_seqret(msf_infile, fasta_outfile):
 	"""
 	TODO: THIS ISNT USED 
 	Converts a msf clustal alignment to fasta record version for processing differently
+	Can be helpful for further analysis. 
 	"""
 	print('Attempting to convert msf alignment to fasta')
 	run_nonpython_process("seqret -sequence \""+msf_infile+"\" -outseq  \""+fasta_outfile+"\"")
@@ -504,6 +595,13 @@ species_fasta = re.compile('>.*\[(.*)\]')
 def ncbi_string_processing(gene_family, taxid, filtered_partial = True, filtered_predicted = True):
 	"""
 	Internal function: Processes inputs to create an NCBI valid query string for data retrival 
+	Vars:
+		gene_family (str) a string of either a string or list (with appropriate escaped " or pairs of "') of gene names to search 
+		taxid (str) a string of either a string or list (with appropriate escaped " or pairs of "') of taxonomic IDs to search in format txid0000
+		filtered_partial (bool) [True] whether to add or exclude partial sequences from the fasta results
+		filtered_predicted (bool) [True] whether to add or exclude predicted sequences from the fasta results
+	Returns: 
+		query_string (str) complete string query for searching ncbi
 	"""
 	query_string = ''
 	if isinstance(taxid, list):
@@ -538,6 +636,16 @@ def get_from_ncbi(gene_family, taxid, file_name, working_directory, filtered_par
 	Requests data in fasta format from the ncbi protein database and if silent is not True pipes this to screen
 	Saves the output as a single output file in the working_directory as the file_name.fasta
 	Prints a sucess message to screen containing file path to data if no errors encountered. 
+	Vars:
+		gene_family (str) a string of either a string or list (with appropriate escaped " or pairs of "') of gene names to search 
+		taxid (str) a string of either a string or list (with appropriate escaped " or pairs of "') of taxonomic IDs to search in format txid0000
+		file_name: (str) prefix name for seqs.fasta output
+		working_directory: (str, path) path to directory to store results in
+		filtered_partial (bool) [True] whether to add or exclude partial sequences from the fasta results
+		filtered_predicted (bool) [True] whether to add or exclude predicted sequences from the fasta results
+		silent: (bool) [True] whether to print outputs to screen (note: summary reports should still be printed regardless)
+	Returns: 
+		save_location: (str, path) path to the multi-sequence fasta_file
 	"""
 	query_string = ncbi_string_processing(gene_family, taxid, filtered_partial, filtered_predicted)
 	print('Attempting to retrive data from ncbi for query')
@@ -561,6 +669,14 @@ def ncbi_data_summary(working_directory, ncbi_data_path, gene_family, taxid, fil
 		Number of genes
 		Number of species 
 		Filter options used 
+	Vars:
+		working_directory: (str, path) path to directory to store results in
+		ncbi_data_path: (str, path) path to the multi-sequence fasta_file
+		gene_family (str) a string of either a string or list (with appropriate escaped " or pairs of "') of gene names to search 
+		taxid (str) a string of either a string or list (with appropriate escaped " or pairs of "') of taxonomic IDs to search in format txid0000
+		filtered_partial (bool) [True] whether to add or exclude partial sequences from the fasta results
+		filtered_predicted (bool) [True] whether to add or exclude predicted sequences from the fasta results
+		save_summary (bool) [True] whether to save print summaries to text files.
 	"""
 	fasta_data = return_file_contents(ncbi_data_path)
 	no_sequences = fasta_data.count('>')
@@ -598,9 +714,12 @@ def ncbi_data_summary(working_directory, ncbi_data_path, gene_family, taxid, fil
 	print(' ')
 
 
-def get_species_no_from_taxid(gene_family):
-	if isinstance(gene_family, list):
-		for gf in gene_family:
+def get_species_no_from_taxid(taxid):
+    """
+	Internal function to provide more information on number of sequences searched in specified taxid
+	"""
+	if isinstance(taxid, list):
+		for gf in taxid:
 			edirect_query = "~/edirect/esearch -db protein -query \""+gf+"[Subtree]"+"\""
 			edirect_response = run_nonpython_process(edirect_query)
 			counts = hit_count.search(edirect_response)
@@ -611,17 +730,17 @@ def get_species_no_from_taxid(gene_family):
 			counts = hit_count.search(edirect_response)
 			counts = counts.group(1)
 			print('INFO: Total number of subtree species searched in taxid:'+str(gf)+' is '+str(counts))
-	elif isinstance(gene_family, str):
-		edirect_query = "~/edirect/esearch -db protein -query \""+gene_family+"[Subtree]"+"\""
+	elif isinstance(taxid, str):
+		edirect_query = "~/edirect/esearch -db protein -query \""+taxid+"[Subtree]"+"\""
 		edirect_response = run_nonpython_process(edirect_query)
 		counts = hit_count.search(edirect_response)
 		counts = counts.group(1)
-		print('INFO: Total number of subtree taxonomy groups searched in taxid:'+str(gene_family)+' is '+str(counts))
-		edirect_query = "~/edirect/esearch -db protein -query \""+gene_family+"[Subtree] AND species[rank]"+"\""
+		print('INFO: Total number of subtree taxonomy groups searched in taxid:'+str(taxid)+' is '+str(counts))
+		edirect_query = "~/edirect/esearch -db protein -query \""+taxid+"[Subtree] AND species[rank]"+"\""
 		edirect_response = run_nonpython_process(edirect_query)
 		counts = hit_count.search(edirect_response)
 		counts = counts.group(1)
-		print('INFO: Total number of subtree species searched in taxid:'+str(gene_family)+' is '+str(counts))	
+		print('INFO: Total number of subtree species searched in taxid:'+str(taxid)+' is '+str(counts))	
 	else:
 		raise ValueError('Internal Error: Type formatting was incorrectly passed to get_species_no_from_taxid')	
 
@@ -631,9 +750,13 @@ def get_species_no_from_taxid(gene_family):
 def align_with_clustalo(fasta_path, iteration, thread_process_dict, silent = True):
 	"""
 	Uses the clustalo package through bash (through subprocess) to generate a multiple sequence alignment file
-	fastafile_location: The full path of the fasta file location 
-	iteration: the number of iterations for the clustalo tree
-	overwrite_max_seqno: default value False, if true removes limit on the number of sequences WARNING: DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING!!!
+	Vars:
+		fasta_path: (str, path) path to the multi-sequence fasta file
+		iteration: (int) [30] number of trees-iteratations for alignment method
+		thread_process_dict (dict) contains the threads used for each method
+		silent: (bool) [True] whether to print outputs to screen (note: summary reports should still be printed regardless)
+	Returns: 
+		clustal_output (str, path) path to the clustal alignment output file
 	"""
 	print('Attempting Clustalso Alignment...')
 	clustal_output = fasta_path.replace('seqs.fasta', 'clustal.msf')
@@ -655,7 +778,17 @@ def align_with_clustalo(fasta_path, iteration, thread_process_dict, silent = Tru
 	print(' ')
 	return clustal_output
 
+
 def similarity_matrix_clustalo(fasta_path, thread_process_dict):
+    """
+	Creates a pairwise distance matrix using clustalo aligment for use in heatmap plotting
+	Requires user input to continue as large number of sequences will take a long time
+	Vars: 
+		fasta_path: (str, path) path to the multi-sequence fasta file
+		thread_process_dict (dict) contains the threads used for each method
+	Returns: 
+		matrix_output: (str, path) path to matrix output file. 
+	"""
 	threads = thread_process_dict['similarity matrix']
 	input_string = user_input_formating(input('WARNING: Pairwise distance matrix are very slow with large sequence numbers. Are you sure you want to continue?'))
 	if input_string != True: 
@@ -668,9 +801,15 @@ def similarity_matrix_clustalo(fasta_path, thread_process_dict):
 	print('Similarity matrix produced')	
 	return matrix_output
 
+
 def get_consensus_from_alignment(clustal_output):
 	"""
-	Uses EMBOSS Cons to get a consensus sequence from the Clustalo alignment files. 
+	Uses EMBOSS Cons to get a consensus sequence from the Clustalo alignment files.
+	Prints the consensus to screen.
+	Vars: 
+		clustal_output (str, path) path to the clustal alignment output file
+	Returns: 
+		output (str, path) path to the consensus fasta file
 	"""
 	print('Attempting to create a consensus sequence from Clustalo output')
 	output = clustal_output.replace('clustal.msf', 'consensus.fa' )
@@ -689,6 +828,12 @@ def get_consensus_from_alignment(clustal_output):
 def create_blastdb(working_directory, outputname, fastafile_path):
 	"""
 	Uses makeblastdb to make a blast-searchable database from a file containing multiple fastas and save them to an output for use in blastp processing. 
+	Vars: 
+		working_directory: (str, path) path to directory to store results in
+		outputname: (str) prefix name for blastdb database output
+		fastafile_path: (str, path) path to the multi-sequence fasta file
+	Returns: 
+		output (str, path) path to blastdb files 
 	"""
 	print('Attempting to create a blastdb from fasta files')
 	output = working_directory+'/'+outputname+'blastdb'
@@ -699,6 +844,14 @@ def create_blastdb(working_directory, outputname, fastafile_path):
 
 
 def query_choice(filepath, fasta_dict):
+    """
+	Internal function to allow selection of valid sequence files to use as a query in the blastp analysis
+	Gives list of valid file (based on extension) and user prompt to select. 
+	If user selects multi-fasta file, allows user to select a single fasta from list of ids contained in multi-sequence fasta
+	then will create a single-sequence fasta to use in blastp. 
+
+	For measure of general similarity, using the consensus file created from cons in the clustalo sub-task is recomended.
+	"""
 	fastas = [fastafile for fastafile in os.listdir(os.path.expanduser(filepath)) if fastafile.endswith(".fasta") == True or fastafile.endswith(".fa") == True ]
 	print('You have the following files with valid file extension for querying against blasdb:')
 	count = 0
@@ -741,6 +894,13 @@ def query_choice(filepath, fasta_dict):
 def query_blastdb(blastdb_filepath, query_filepath, thread_process_dict,  silent = True):
 	"""
 	Uses blastp query a blast-searchable database with selected query_file. 
+	Vars: 
+		blastdb_filepath (str, path) path to custom blastdb 
+		query_filepath (str, path) path to fasta file(s) to blast against db 
+		thread_process_dict (dict) contains the threads used for each method
+		silent: (bool) [True] whether to print outputs to screen (note: summary reports should still be printed regardless)
+	Returns:
+		output (str, path) pth to the blastp output file	
 	"""
 	print('Attempting to run blastp for selected file:'+ str(query_filepath)+' against blastdb:'+str(blastdb_filepath)+'with sequence:')
 	print(return_file_contents(query_filepath))
@@ -758,6 +918,17 @@ def query_blastdb(blastdb_filepath, query_filepath, thread_process_dict,  silent
 
 
 def bin_results(input_file, bin_no, ignore_lines = '#', print_bin_contents = False):
+    """
+	Function to split results into specified bins: 
+	Vars: 
+		input_file:(str, path) path to the blastp output file
+		bin_no: (int) [250] the number of sequences to put in each bin 
+		ignore_lines: (str) ['#'] marker for comment lines to ignore
+		print_bin_contents: (bool), [False] useful for troubleshooting. Prints sequence_ids 
+		contained in bin. 
+	Returns: 
+		result_bin (dict) containing bin_number as key with blast_output, rank as value
+	"""
 	print('Binning results from Blastp')
 	result_bin = {}
 	data = return_file_contents(input_file)
@@ -795,6 +966,9 @@ def bin_results(input_file, bin_no, ignore_lines = '#', print_bin_contents = Fal
 
 
 def convert_blastline_to_dict(line, rank_counter):
+    """
+	Internal Function Creates a dictionary of blast results including rank and blast results
+	"""
 	entry = line.split('\t')
 	if len(entry) != 12:
 		raise ValueError('Blast output expected to be length 12 but is actually length:'+str(len(entry)))
@@ -818,6 +992,10 @@ def convert_blastline_to_dict(line, rank_counter):
 
 
 def bin_selection(valid_bin_list, method):
+    """
+	Internal function to allow one or more bins to be selected for further analysis (motif search & plotting)
+	will default to only using the top bin (0) if non valid user prompt entry.
+	"""
 	default_bin = False
 	print('Bins for analysis: '+str(method)+' are '+str(list(valid_bin_list)))
 	input_bins = input('Please select which bin number to continue with, or enter a list seperated by \',\'. Default value is the top scoring group (0) ')
@@ -864,6 +1042,10 @@ Av_res_weight = re.compile('Average Residue Weight  = (\S*)')
 def get_protein_stats_from_pepstats(fastafile_location):
 	"""
 	Uses EMBOSS pepstats to get protein statistics from the fasta files and save them to an output. 
+	Vars: 
+		fastafile_location: (str, path) path to the multi-sequence fasta file
+	Returns: 
+		output: (str, path) path to the pepstats output file
 	"""
 	print('Attempting to get protein statistics from pepstats')
 	print(fastafile_location)
@@ -877,6 +1059,10 @@ def get_protein_stats_from_pepstats(fastafile_location):
 
 
 def check_protein_basic_stats(fasta_list):
+    """
+	Internal function to create the fasta_dict and populate it with basic info 
+	from the fasta file. 
+	"""
 	if isinstance(fasta_list, list) == False:
 		raise ValueError('Fasta_list input was not of type list. No dictionary created from fasta files.')
 	fasta_dict = {}
@@ -890,6 +1076,11 @@ def check_protein_basic_stats(fasta_list):
 
 
 def add_pepstats_info_to_dict(fasta_dict, pepstatsfile):
+    """
+	Internal function to populate fasta_dict with the basic results of the pepstats search
+		-TODO can be extended to process more complex results from pepstats to plot protein 
+			of intrest in more detail
+	"""
 	data = return_file_contents(pepstatsfile)
 	entries = list(filter(None, data.split('PEPSTATS of ')))
 	for entry in entries:
@@ -961,6 +1152,10 @@ def process_prositedb_with_prosextract(prosite_dir):
 
 
 def get_prosite_db(prosite_db_directory = '/localdisk/software/EMBOSS-6.6.0/share/EMBOSS/data/PROSITE/prosite.lines'):
+	"""
+	Checks if the prosite database exists in an accesible directory. If not downloads the required file
+	and compiles them into a patmatmotifs searchable format. 
+	"""
 	if os.path.exists(prosite_db_directory):
 		print('Prosite file \"prosite.lines\" was found. Continuing with analysis')
 	else: 
@@ -972,6 +1167,9 @@ def get_prosite_db(prosite_db_directory = '/localdisk/software/EMBOSS-6.6.0/shar
 def search_for_motifs(fasta_file_name, directory, silent = True): 
 	"""
 	Uses prosite to search motifs in a given fasta file 
+		fasta_file_name (str) the name of the fasta file without .fasta extension
+		directory: (str, path) path to the individual-sequence fasta files storage location
+		silent: (bool) [True] whether to print outputs to screen 
 	"""
 	f = directory+'/'+fasta_file_name+'.fasta'
 	fout = f.replace('.fasta', '.motif')
@@ -982,6 +1180,11 @@ def search_for_motifs(fasta_file_name, directory, silent = True):
 		   
 
 def get_selected_seq(blast_bin_no, blast_bin, fasta_dict, directory):
+	"""
+	Internal function. Checks the blast_bin results for sequence_id and compares this
+	with the fasta_dict. If the sequence_id is found, it create an individual fasta record in
+	that directory from the sequence in fasta_dict[sequence_id] as individual fasta required for motif searching
+	"""
 	## Get the acc from bin dict
 	## Look up sequence in fasta_dict 
 	fasta_in_bin = []
@@ -1000,6 +1203,11 @@ def search_motifs_from_list(fasta_list, group_name, directory, keep_fastas = Fal
 	"""
 	Wraps the motif finder using prosite for each fasta file in a list. 
 	Useful for searching bins but kept as a wrapper in case user wishes to search specific single sequence
+	Vars:
+		fasta_list: (list) list of fasta_ids to use in motif searching
+		group_name: (str int) name of bin group to use in motif searching 
+		directory:  (str path) name of directory contaning fasta sequences
+		keep_fastas:  (bool) [False] whether to store the single sequence fastas for each fasta_id in fasta_list
 	"""
 	print('Attempting to search for motifs using prosite in sequences: bin_'+str(group_name))
 	for fasta_file_name in fasta_list:
@@ -1013,6 +1221,10 @@ def search_motifs_from_list(fasta_list, group_name, directory, keep_fastas = Fal
 def create_new_fasta_record(name, sequence, directory):
 	"""
 	Creates a new fasta file for the specified identifier and sequence and writes to given directory
+	Vars:
+		Name: (str) unique string id
+		Sequence: (str) protein sequence 
+		directory: Directory to store fasta results in (motifs/bin_x)
 	"""
 	with open(directory+'/'+str(name)+'.fasta', 'w+')  as f:
 		f.write('>'+str(name)+sequence)
@@ -1027,6 +1239,9 @@ def report_motif_results(directory, save_summary):
 	Prints to screen a summary report on the motifs found from PROSITE data in the given directory
 	Does not include reports where no motifs were found
 	eg [protein_id] has [INT] motifs found with prosite name [PROSITE ENTRY NAME] 
+	Vars:
+		directory: (str) of where the motif files are stored
+		save_summary: (bool) wheather to save the summary report to motif_summary.txt file
 	"""
 
 	motif_files = [mfile for mfile in os.listdir(directory) if mfile.endswith(".motif")]
@@ -1053,6 +1268,12 @@ def report_motif_results(directory, save_summary):
 ### ---------- Plotting Functions ---------- ### 
 
 def create_hydropathy_plot(alignment_file):
+	"""
+	Uses the EMBOSS package pepwindowall to create a hydropathy_alignment 
+	from the input alignment file path
+	Vars: 
+		alignment_file (str, path) path to the clustal alignment output file
+	"""
 	print('Attempting to create Kyte-Doolittle Hydropathy plot for alignment')
 	output = alignment_file.replace('clustal.msf', 'hydropathy_alignment')
 	if not output.endswith('hydropathy_alignment'):
@@ -1065,6 +1286,8 @@ def create_hydropathy_plot(alignment_file):
 def create_plotcon(alignment_file):
 	"""
 	Uses emboss plotcon to make a similarity plot from the clustalo alignment file. 
+	Vars: 
+		alignment_file (str, path) path to the clustal alignment output file
 	"""
 	print('Attempting to create a similarity plot from clustalo alignment file')
 	output = alignment_file.replace('_clustal.msf', '_similarityplot')
@@ -1074,6 +1297,11 @@ def create_plotcon(alignment_file):
 
 
 def plot_similarity_matrix_heatmap(matrix_filepath):
+	"""
+	Creates a heatmap from the similarity matrix calculated by Clustalo
+	Vars: 
+		matrix_filepath (str, path) the path to clustalo output similarity matrix file 
+	"""
 	data = return_file_contents(matrix_filepath)
 	labels = []
 	matrix = []
@@ -1095,18 +1323,41 @@ def plot_similarity_matrix_heatmap(matrix_filepath):
 
 def create_pd_from_blastp(inputfile, ignored = '#'):
 	"""
+	Internal function, creates a blast dataframe using expected headers, split on \t from a blastp_outputfile
+	Ignores comment lines
+	Vars: 
+		inputfile:(str, path) path to the blastp output file
+	Returns: 
+		blastdb: [pandas dataframe] a dataframe of blast results for plotting vars
 	"""
 	headers=['query_acc.', 'subject_acc.', '%_identity', 'alignment_length', 'mismatches', 'gap_opens', 'query_start', 'query_end', 'subject_start', 'subject_end', 'evalue', 'bit_score']
 	blastpd = pd.read_csv(inputfile, comment = ignored, sep ='\t', names = headers)
 	return blastpd
 
 
-
 def create_pd_from_fasta_dict(fasta_dict):
 	"""
+	Simple dataframe creator from fasta
+	Vars: 
+		fasta_dict: (dict) containg key (sequence_id), value (long name, sequence, basic stats) pairs on fasta interpretation results
+	Output: 
+		fastadb: [pandas dataframe] a dataframe of fasta_dict for plotting vars
 	"""
 	df = pd.DataFrame.from_dict(fasta_dict, orient = 'index')
 	return df
+
+def create_pepinfo_plots(fasta_file_path, fasta_file_label):
+	"""
+	Creates pepinfo plots (hydropathy and intrest units)
+	TODO: NOT Currently used. 
+	TODO: Not Currently working
+	Vars: 
+		fasta_file_path (str, path) a path to a single-sequence fasta file
+		fasta_file_label (str) the label id for fasta file
+	"""
+	print('Attempting to create pep-info plot for selected fasta file'+str(fasta_file_label))
+	## Makes graph in file called pepinfo.ps 
+	run_nonpython_process("pepinfo \""+fasta_file_path+"\" -graph cps -gtitle \""+fasta_file_label+"\"")
 
 
 ### ---------- TO RUN AS SCRIPT ---------- ### 
@@ -1167,23 +1418,19 @@ def create_catagorical_line_plot(x, y, title, fasta_df, motif_bin_filepath):
 			if file_name.replace('.fasta', '').replace('.motif') not in bin_ids[count]:
 				bin_ids[count].append([])
 	if len(bin_paths) == 1:
-plt.plot(subdf.index, subdf['Mol_Weight'], 'r')
-plt.plot(subdf.index, subdf['Charge'], 'b')
-plt.plot(subdf.index, subdf['length'], 'p')		
-	fig, ax = plt.subplots(1,len(bin_paths))
-	ax
+		plt.plot(subdf.index, subdf['Mol_Weight'], 'r')
+		plt.plot(subdf.index, subdf['Charge'], 'b')
+		plt.plot(subdf.index, subdf['length'], 'p')		
+	else: 
+		fig, ax = plt.subplots(1,len(bin_paths))
+		ax
 	
 def subdf_for_bin(id_list, df):
 	
 	df = df[df.index.isin(id_list)]
 	return df
 ['CAP10123.1', 'CAP10110.1', 'BAE72078.1', 'BAE46847.1']
-#def create_pepinfo_plots(fasta_file, fasta_file_label):
-#    print('Attempting to create pep-info plot for selected fasta file'+str(fasta_file_label))
-#    output = fasta_file.replace('.fasta', 'pepinfo')
-#    ## Makes graph in file called pepinfo.ps 
-#    ## pepinfo "/localdisk/home/ifarquha/testing_patterns/XP_030822190.1" -graph cps -gtitle XP_030822190.1 #
-#
+
 
 """
 
