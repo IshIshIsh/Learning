@@ -795,9 +795,10 @@ def similarity_matrix_clustalo(fasta_path, thread_process_dict):
 		return False
 	print('Attempting to create similarity matrix')
 	matrix_output = fasta_path.replace('seqs.fasta', 'matrix.txt')
+	align_output = fasta_path.replace('seqs.fasta', 'align.txt')
 	if not matrix_output.endswith('matrix.txt'):
 		matrix_output = matrix_output + 'matrix.txt'
-	run_nonpython_process("clustalo -i \""+fasta_path+"\" --threads "+str(threads)+" -full -o \""+fasta_path+"\" -v --distmat-out= \""+matrix_output+"\"")
+	run_nonpython_process("clustalo -i \""+fasta_path+"\" --threads "+str(threads)+" --full -o \""+align_output+"\" -v --distmat-out= \""+matrix_output+"\"")
 	print('Similarity matrix produced')	
 	return matrix_output
 
