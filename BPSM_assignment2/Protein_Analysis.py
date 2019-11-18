@@ -117,7 +117,7 @@ def master_analysis(gene_family, taxid, defaults_requests = True, parameter_dict
 	alignment_file_path, consensus = master_clustalo(ncbi_data_path, parameter_dict['clustalo_iteration'][1], thread_process_dict, parameter_dict['silent'][1])
 	fasta_dict = master_protein_analysis(ncbi_data_path)
 	blast_data_path, bins = master_blast(working_dir0, parameter_dict['name'][1], ncbi_data_path, fasta_dict, parameter_dict['bin_no'][1], thread_process_dict, parameter_dict['silent'][1])
-	fasta_dict = master_motifs(working_dir0, fasta_dict, bins, parameter_dict['keep_fastas'][1],parameter_dict['save_summary'])
+	fasta_dict = master_motifs(working_dir0, fasta_dict, bins, parameter_dict['keep_fastas'][1],parameter_dict['save_summary'][1])
 	fastadb, blastdb = master_graphs(alignment_file_path,ncbi_data_path, thread_process_dict,  blast_data_path, fasta_dict)
 	print('Anaylsis Complete')
 	return fasta_dict, fastadb, blastdb
@@ -250,7 +250,7 @@ def master_motifs(analysispath, fasta_dict, bins, keep_fastas, save_summary):
 		search_motifs_from_list(fasta_list_from_bin, selected_bin_label, analysispath+'/motifs/bin_'+str(selected_bin_label), keep_fastas)
 		print('Prosite scan completed for bin:'+str(selected_bin_label))
 		print(' ')
-	for folder in os.listdir(os.path.expanduser(analysispath+'/motifs/')):
+	for folder in os.listdir(os.path.expanduser(analysispath+'/motifs')):
 		report_motif_results(analysispath+'/motifs/'+folder, save_summary)
 	print('For more information on motifs per sequence, please see relevant files in folder:'+analysispath+'/motifs/')
 	return fasta_dict 
