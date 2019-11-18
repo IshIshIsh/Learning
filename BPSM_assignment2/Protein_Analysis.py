@@ -1378,6 +1378,15 @@ To run as a script in command line with multiple entries for genefamily or taxid
 
 python3 Protein_Analysis.py G6pc,COX1 txid8782
 
+
+
+pa.master_analysis('G6pc', 'txid8782')
+
+pa.master_analysis('G6pc', 'txid8782', False)
+
+pa.master_analysis("['G6pc', 'COX1']", 'txid8782', False)
+
+
 """
 
 if __name__ == "__main__":
