@@ -1317,7 +1317,7 @@ def plot_similarity_matrix_heatmap(matrix_filepath):
 				else: 
 					matrix[record_index-1].append(float(column_data))
 	df = pd.DataFrame(matrix, columns = labels, index = labels)
-	ax = sns.heatmap(df)
+	sns.heatmap(df)
 	plt.title('Heatmap of Similarity Matrix for sequence_id')
 	plt.tight_layout()
 	plt.savefig('similarity_matrix_heatmap.png')
@@ -1378,9 +1378,6 @@ To run as a script in command line with multiple entries for genefamily or taxid
 
 python3 Protein_Analysis.py G6pc,COX1 txid8782
 
-Note: This limits the input arguments to a single genefamily and taxid and results in user 
-prompts for all other variables. For more complicated usage please import the module and call 
-the master function or each tasks master function.  
 """
 
 if __name__ == "__main__":
